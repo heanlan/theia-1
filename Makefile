@@ -1,13 +1,14 @@
-SHELL              := /bin/bash
+SHELL                 := /bin/bash
 # go options
-GO                 ?= go
-LDFLAGS            :=
-GOFLAGS            :=
-BINDIR             ?= $(CURDIR)/bin
-GO_FILES           := $(shell find . -type d -name '.cache' -prune -o -type f -name '*.go' -print)
-GOPATH             ?= $$($(GO) env GOPATH)
-DOCKER_CACHE       := $(CURDIR)/.cache
-GO_VERSION         := $(shell head -n 1 build/images/deps/go-version)
+GO                    ?= go
+LDFLAGS               :=
+GOFLAGS               :=
+BINDIR                ?= $(CURDIR)/bin
+GO_FILES              := $(shell find . -type d -name '.cache' -prune -o -type f -name '*.go' -print)
+GOPATH                ?= $$($(GO) env GOPATH)
+DOCKER_CACHE          := $(CURDIR)/.cache
+THEIA_BINARY_NAME     ?= theia
+GO_VERSION            := $(shell head -n 1 build/images/deps/go-version)
 
 DOCKER_BUILD_ARGS = --build-arg GO_VERSION=$(GO_VERSION)
 
@@ -165,3 +166,18 @@ policy-recommendation:
 	docker tag antrea/theia-policy-recommendation:$(DOCKER_IMG_VERSION) antrea/theia-policy-recommendation
 	docker tag antrea/theia-policy-recommendation:$(DOCKER_IMG_VERSION) projects.registry.vmware.com/antrea/theia-policy-recommendation
 	docker tag antrea/theia-policy-recommendation:$(DOCKER_IMG_VERSION) projects.registry.vmware.com/antrea/theia-policy-recommendation:$(DOCKER_IMG_VERSION)
+
+.PHONY: theia
+theia:
+	@mkdir -p $(BINDIR)
+	GOOS=linux $(GO) build -o $(BINDIR) $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/pkg/theia
+
+# Add the darwin version binary to help dev&test on Mac for now
+.PHONY: theia-darwin
+theia-darwin:
+	@mkdir -p $(BINDIR)
+	GOOS=darwin $(GO) build -o $(BINDIR) $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/pkg/theia
+
+.PHONY: theia-release
+theia-release:
+	@$(GO) build -o $(BINDIR)/$(THEIA_BINARY_NAME) $(GOFLAGS) -ldflags '-s -w $(LDFLAGS)' antrea.io/theia/pkg/theia
