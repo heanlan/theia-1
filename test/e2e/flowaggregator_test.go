@@ -1,4 +1,4 @@
-// Copyright 2020 Antrea Authors
+// Copyright 2022 Antrea Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -158,7 +158,10 @@ func TestFlowAggregator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
 	}
-	defer teardownTest(t, data)
+	defer func() {
+		teardownTest(t, data)
+		teardownFlowAggregator(t, data)
+	}()
 
 	podAIPs, podBIPs, podCIPs, podDIPs, podEIPs, err := createPerftestPods(data)
 	if err != nil {

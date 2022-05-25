@@ -301,6 +301,13 @@ function copy_image {
 
 
 function deliver_antrea {
+    export GO111MODULE=on
+    export GOPATH=$WORKDIR/go
+    export GOROOT=/usr/local/go
+    export GOCACHE=$WORKDIR/.cache/go-build
+    export GOMODCACHE=$WORKDIR/.cache/go-mod-cache
+    export PATH=$GOROOT/bin:$PATH
+    
     wget -c  https://raw.githubusercontent.com/antrea-io/antrea/main/build/yamls/antrea.yml -O  ${GIT_CHECKOUT_DIR}/build/yamls/antrea.yml
     sed -i -e "s/#  FlowExporter: false/  FlowExporter: true/g" ${GIT_CHECKOUT_DIR}/build/yamls/antrea.yml
     antrea_yml="antrea.yml"
@@ -331,15 +338,23 @@ function deliver_antrea {
 
 
     ${SCP_WITH_ANTREA_CI_KEY} $GIT_CHECKOUT_DIR/build/yamls/*.yml capv@${control_plane_ip}:~
+    ${SCP_WITH_ANTREA_CI_KEY} $GIT_CHECKOUT_DIR/build/yamls/*.yaml capv@${control_plane_ip}:~
+    ${SCP_WITH_ANTREA_CI_KEY} $GIT_CHECKOUT_DIR/build/charts/theia/crds/*.yaml capv@${control_plane_ip}:~
 
 
+    (cd $GIT_CHECKOUT_DIR && make theia)
+    ${SCP_WITH_ANTREA_CI_KEY} $GIT_CHECKOUT_DIR/bin/theia-linux capv@${control_plane_ip}:~/theia
 
 
     # copy images
     docker pull projects.registry.vmware.com/antrea/antrea-ubuntu:latest
     docker pull projects.registry.vmware.com/antrea/flow-aggregator:latest
+    docker pull projects.registry.vmware.com/antrea/theia-spark-operator:v1beta2-1.3.3-3.1.1
     docker save -o antrea-ubuntu.tar projects.registry.vmware.com/antrea/antrea-ubuntu:latest
     docker save -o flow-aggregator.tar projects.registry.vmware.com/antrea/flow-aggregator:latest
+    docker save -o theia-spark-operator.tar projects.registry.vmware.com/antrea/theia-spark-operator:v1beta2-1.3.3-3.1.1
+    # will be replaced after the policy-recommendation image has been mirror to harbor registry
+    wget -c https://github.com/heanlan/theia-1/releases/download/0.1.0/theia-policy-recommendation.tar
 
     # not sure the exact image tag, so read from yaml
     # and we assume the image tag is the same for all images in this yaml
@@ -350,7 +365,7 @@ function deliver_antrea {
         image_name=$(echo $image |  awk -F ":" '{print $1}' | awk -F "/" '{print $3}')
         image_tag=$(echo $image | awk -F ":" '{print $2}')
         docker save -o $image_name.tar $image
-    done < <(grep "image:" ${GIT_CHECKOUT_DIR}/build/yamls/clickhouse-operator-install-bundle.yml)
+    done < <(grep "image:" ${GIT_CHECKOUT_DIR}/build/charts/theia/crds/clickhouse-operator-install-bundle.yaml)
 
     IPs=($(kubectl get nodes -o wide --no-headers=true | awk '{print $6}' | xargs))
     for i in "${!IPs[@]}"
@@ -360,8 +375,9 @@ function deliver_antrea {
         copy_image flow-aggregator.tar projects.registry.vmware.com/antrea/flow-aggregator ${IPs[$i]} latest  true
         copy_image theia-clickhouse-operator.tar projects.registry.vmware.com/antrea/theia-clickhouse-operator  ${IPs[$i]} $image_tag true
         copy_image theia-metrics-exporter.tar projects.registry.vmware.com/antrea/theia-metrics-exporter  ${IPs[$i]} $image_tag true
+        copy_image theia-spark-operator.tar projects.registry.vmware.com/antrea/theia-spark-operator ${IPs[$i]} v1beta2-1.3.3-3.1.1 true
+        copy_image theia-policy-recommendation.tar docker.io/antrea/theia-policy-recommendation ${IPs[$i]} latest true
     done
-
 }
 
 function run_e2e {

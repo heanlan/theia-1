@@ -161,9 +161,9 @@ func exportLogs(tb testing.TB, data *TestData, logsSubDir string, writeNodeLogs 
 	// runKubectl runs the provided kubectl command on the control-plane Node and returns the
 	// output. It returns an empty string in case of error.
 	runKubectl := func(cmd string) string {
-		rc, stdout, _, err := data.RunCommandOnNode(controlPlaneNodeName(), cmd)
+		rc, stdout, stderr, err := data.RunCommandOnNode(controlPlaneNodeName(), cmd)
 		if err != nil || rc != 0 {
-			tb.Errorf("Error when running this kubectl command on control-plane Node: %s", cmd)
+			tb.Errorf("Error when running kubectl command on control-plane Node, cmd:%s\nstdout:%s\nstderr:%s", cmd, stdout, stderr)
 			return ""
 		}
 		return stdout
