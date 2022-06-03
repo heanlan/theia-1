@@ -80,6 +80,7 @@ const (
 	chOperatorYML            string = "clickhouse-operator-install-bundle.yaml"
 	flowVisibilityCHPodName  string = "chi-clickhouse-clickhouse-0-0-0"
 	sparkOperatorYML         string = "spark-operator.yaml"
+	policyOutputYML          string = "output.yaml"
 
 	agnhostImage  = "k8s.gcr.io/e2e-test-images/agnhost:2.29"
 	busyboxImage  = "projects.registry.vmware.com/antrea/busybox"
@@ -1227,14 +1228,18 @@ func (data *TestData) deleteFlowVisibility() error {
 	return nil
 }
 
-func deleteSparkOperator(tb testing.TB, data *TestData) {
+func teardownPolicyRecommendation(tb testing.TB, data *TestData) {
 	startTime := time.Now()
 	defer func() {
-		log.Infof("Deleting Spark Operator took %v", time.Since(startTime))
+		log.Infof("Deleting Spark Operator and recommended policies took %v", time.Since(startTime))
 	}()
 	rc, _, _, err := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl delete -f %s -n %s", sparkOperatorYML, flowVisibilityNamespace))
 	if err != nil || rc != 0 {
 		tb.Logf("Error when deleting Spark Operator: %v", err)
+	}
+	rc, _, _, err = data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl delete -f %s", policyOutputYML))
+	if err != nil || rc != 0 {
+		tb.Logf("Error when deleting recommended policies: %v", err)
 	}
 }
 

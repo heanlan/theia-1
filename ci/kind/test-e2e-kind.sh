@@ -42,8 +42,8 @@ FLOW_VISIBILITY_CMD=$(dirname $0)"/../../hack/generate-manifest.sh"
 CH_OPERATOR_YML=$(dirname $0)"/../../build/charts/theia/crds/clickhouse-operator-install-bundle.yaml"
 SPARK_OPERATOR_YML=$(dirname $0)"/../../build/yamls/spark-operator.yaml"
 
-make theiactl
-THEIACTL_BIN=$(dirname $0)"/../../bin/theiactl"
+make theia
+THEIACTL_BIN=$(dirname $0)"/../../bin/theia"
 
 function quit {
   result=$?
@@ -161,7 +161,7 @@ function run_test {
   docker exec -i kind-control-plane dd of=/root/spark-operator.yaml < $SPARK_OPERATOR_YML
   $FLOW_VISIBILITY_CMD | docker exec -i kind-control-plane dd of=/root/flow-visibility.yml
 
-  docker exec -i kind-control-plane dd of=/root/theiactl < $THEIACTL_BIN
+  docker exec -i kind-control-plane dd of=/root/theia < $THEIACTL_BIN
 
   rm -rf $TMP_DIR
   sleep 1

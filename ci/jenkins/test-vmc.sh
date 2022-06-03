@@ -342,8 +342,8 @@ function deliver_antrea {
     ${SCP_WITH_ANTREA_CI_KEY} $GIT_CHECKOUT_DIR/build/charts/theia/crds/*.yaml capv@${control_plane_ip}:~
 
 
-    (cd $GIT_CHECKOUT_DIR && make theiactl)
-    ${SCP_WITH_ANTREA_CI_KEY} $GIT_CHECKOUT_DIR/bin/theiactl capv@${control_plane_ip}:~
+    (cd $GIT_CHECKOUT_DIR && make theia)
+    ${SCP_WITH_ANTREA_CI_KEY} $GIT_CHECKOUT_DIR/bin/theia capv@${control_plane_ip}:~
 
 
     # copy images
@@ -353,6 +353,7 @@ function deliver_antrea {
     docker save -o antrea-ubuntu.tar projects.registry.vmware.com/antrea/antrea-ubuntu:latest
     docker save -o flow-aggregator.tar projects.registry.vmware.com/antrea/flow-aggregator:latest
     docker save -o theia-spark-operator.tar projects.registry.vmware.com/antrea/theia-spark-operator:v1beta2-1.3.3-3.1.1
+    # will be replaced after the policy-recommendation image has been mirror to harbor registry
     wget -c https://github.com/heanlan/theia-1/releases/download/0.1.0/theia-policy-recommendation.tar
 
     # not sure the exact image tag, so read from yaml
@@ -374,7 +375,7 @@ function deliver_antrea {
         copy_image flow-aggregator.tar projects.registry.vmware.com/antrea/flow-aggregator ${IPs[$i]} latest  true
         copy_image theia-clickhouse-operator.tar projects.registry.vmware.com/antrea/theia-clickhouse-operator  ${IPs[$i]} $image_tag true
         copy_image theia-metrics-exporter.tar projects.registry.vmware.com/antrea/theia-metrics-exporter  ${IPs[$i]} $image_tag true
-        copy_image theia-spark-operator.tar ghcr.io/googlecloudplatform/spark-operator ${IPs[$i]} v1beta2-1.3.3-3.1.1 true
+        copy_image theia-spark-operator.tar projects.registry.vmware.com/antrea/theia-spark-operator ${IPs[$i]} v1beta2-1.3.3-3.1.1 true
         copy_image theia-policy-recommendation.tar docker.io/dyongming511/theia-policy-recommendation ${IPs[$i]} latest true
     done
 }

@@ -27,18 +27,20 @@ import (
 )
 
 const (
-	// Use a long timeout as it takes ~400s to complete a single Spark job on
-	// Jenkins testbed
-	jobCompleteTimeout    = 10 * time.Minute
-	outputYaml            = "output.yaml"
+	// Use a long timeout as it takes ~500s to complete a single Spark job on
+	// Kind testbed
+	jobCompleteTimeout = 10 * time.Minute
+	startCmd           = "./theia policy-recommendation run"
+	statusCmd          = "./theia policy-recommendation status"
+	retrieveCmd        = "./theia policy-recommendation retrieve"
+	// With the workload traffic perftest-a -> perftest-b, we expect the policy
+	// recommendation job recommends two allow ANP, and two default deny ACNP.
+	// Besides, there will always be three allow ACNP recommended for the
+	// 'kube-system', 'flow-aggregator', and 'flow-visibility' Namespaces.
 	expectedAllowANPCnt   = 2
 	expectedAllowACNPCnt  = 3
 	expectedRejectANPCnt  = 0
 	expectedRejectACNPCnt = 2
-)
-
-var (
-	kubeconfigPath = ".kube/config"
 )
 
 func TestPolicyRecommendation(t *testing.T) {
@@ -49,7 +51,7 @@ func TestPolicyRecommendation(t *testing.T) {
 	defer func() {
 		teardownTest(t, data)
 		teardownFlowAggregator(t, data)
-		deleteSparkOperator(t, data)
+		teardownPolicyRecommendation(t, data)
 		teardownFlowVisibility(t, data)
 	}()
 
@@ -59,11 +61,11 @@ func TestPolicyRecommendation(t *testing.T) {
 	}
 
 	t.Run("testPolicyRecommendationStart", func(t *testing.T) {
-		testPolicyRecommendationStart(t, data)
+		testPolicyRecommendationRun(t, data)
 	})
 
 	t.Run("testPolicyRecommendationCheck", func(t *testing.T) {
-		testPolicyRecommendationCheck(t, data)
+		testPolicyRecommendationStatus(t, data)
 	})
 
 	podAIPs, podBIPs, err := createTestPods(data)
@@ -81,7 +83,7 @@ func TestPolicyRecommendation(t *testing.T) {
 			dstPodName: "perftest-b",
 		}
 		t.Run("testPolicyRecommendationResult/IPv4", func(t *testing.T) {
-			testPolicyRecommendationResult(t, data, false, testFlow)
+			testPolicyRecommendationRetrieve(t, data, false, testFlow)
 		})
 	}
 	if v6Enabled {
@@ -94,24 +96,24 @@ func TestPolicyRecommendation(t *testing.T) {
 			dstPodName: "perftest-b",
 		}
 		t.Run("testPolicyRecommendationResult/IPv6", func(t *testing.T) {
-			testPolicyRecommendationResult(t, data, true, testFlow)
+			testPolicyRecommendationRetrieve(t, data, true, testFlow)
 		})
 	}
 }
 
-// Example output: A new policy recommendation job is created successfully, id is e998433e-accb-4888-9fc8-06563f073e86
-func testPolicyRecommendationStart(t *testing.T, data *TestData) {
-	cmd, stdout, stderr := startJob(t, data)
+// Example output: Successfully created policy recommendation job with ID e998433e-accb-4888-9fc8-06563f073e86
+func testPolicyRecommendationRun(t *testing.T, data *TestData) {
+	cmd, stdout, stderr := runJob(t, data)
 	assert := assert.New(t)
-	assert.Containsf(stdout, "A new policy recommendation job is created successfully, id is", "cmd:%s\nstdout:%s\nstderr:%s", cmd, stdout, stderr)
+	assert.Containsf(stdout, "Successfully created policy recommendation job with ID", "cmd:%s\nstdout:%s\nstderr:%s", cmd, stdout, stderr)
 }
 
 // Example output: Status of this policy recommendation job is COMPLETED
-func testPolicyRecommendationCheck(t *testing.T, data *TestData) {
-	_, stdout, _ := startJob(t, data)
+func testPolicyRecommendationStatus(t *testing.T, data *TestData) {
+	_, stdout, _ := runJob(t, data)
 	stdoutSlice := strings.Split(stdout, " ")
 	jobId := strings.TrimSuffix(stdoutSlice[len(stdoutSlice)-1], "\n")
-	cmd, stdout, stderr := checkJob(t, data, jobId)
+	cmd, stdout, stderr := getJobStatus(t, data, jobId)
 	assert := assert.New(t)
 	assert.Containsf(stdout, "Status of this policy recommendation job is", "cmd:%s\nstdout:%s\nstderr:%s", cmd, stdout, stderr)
 }
@@ -122,28 +124,31 @@ func testPolicyRecommendationCheck(t *testing.T, data *TestData) {
 // metadata:
 //   name: recommend-allow-anp-fj3hd
 // ...
-func testPolicyRecommendationResult(t *testing.T, data *TestData, isIPv6 bool, testFlow testFlow) {
+func testPolicyRecommendationRetrieve(t *testing.T, data *TestData, isIPv6 bool, testFlow testFlow) {
 	var cmdStr string
 	if !isIPv6 {
-		cmdStr = fmt.Sprintf("iperf3 -c %s -t %d", testFlow.dstIP, iperfTimeSec)
+		cmdStr = fmt.Sprintf("iperf3 -c %s", testFlow.dstIP)
 	} else {
-		cmdStr = fmt.Sprintf("iperf3 -6 -c %s -t %d", testFlow.dstIP, iperfTimeSec)
+		cmdStr = fmt.Sprintf("iperf3 -6 -c %s", testFlow.dstIP)
 	}
 	stdout, stderr, err := data.RunCommandFromPod(testNamespace, testFlow.srcPodName, "perftool", []string{"bash", "-c", cmdStr})
 	require.NoErrorf(t, err, "Error when running iPerf3 client: %v,\nstdout:%s\nstderr:%s", err, stdout, stderr)
 
-	_, stdout, _ = startJob(t, data)
+	_, stdout, _ = runJob(t, data)
 	stdoutSlice := strings.Split(stdout, " ")
 	jobId := strings.TrimSuffix(stdoutSlice[len(stdoutSlice)-1], "\n")
 	err = waitJobComplete(t, data, jobId, jobCompleteTimeout)
 	require.NoErrorf(t, err, "policy recommendation Spark job failed to completed")
 
 	// Apply the recommended policies, and check the results
-	getJobResult(t, data, jobId)
-	cmd := fmt.Sprintf("kubectl apply -f %s", outputYaml)
+	retrieveJobResult(t, data, jobId)
+	cmd := fmt.Sprintf("kubectl apply -f %s", policyOutputYML)
 	_, stdout, stderr, err = data.RunCommandOnNode(controlPlaneNodeName(), cmd)
 	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", cmd, controlPlaneNodeName(), err, stdout, stderr)
-	// Check recommended ANP count
+	_, allPolicies, stderr, err := data.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("cat %s", policyOutputYML))
+	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", cmd, controlPlaneNodeName(), err, stdout, stderr)
+
+	// Check recommended ANP counts
 	cmd = fmt.Sprintf("kubectl get anp -n %s", testNamespace)
 	_, stdout, stderr, err = data.RunCommandOnNode(controlPlaneNodeName(), cmd)
 	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", cmd, controlPlaneNodeName(), err, stdout, stderr)
@@ -159,9 +164,10 @@ func testPolicyRecommendationResult(t *testing.T, data *TestData, isIPv6 bool, t
 		}
 	}
 	assert := assert.New(t)
-	assert.Equal(expectedAllowANPCnt, allowANPCnt)
-	assert.Equal(expectedRejectANPCnt, rejectANPCnt)
-	// Check recommended ACNP count
+	assert.Equalf(expectedAllowANPCnt, allowANPCnt, fmt.Sprintf("Expected allow ANP count is: %d. Actual count is: %d. Recommended policies:\n%s", expectedAllowANPCnt, allowANPCnt, allPolicies))
+	assert.Equalf(expectedRejectANPCnt, rejectANPCnt, fmt.Sprintf("Expected reject ANP count is: %d. Actual count is: %d. Recommended policies:\n%s", expectedRejectANPCnt, rejectANPCnt, allPolicies))
+
+	// Check recommended ACNP counts
 	cmd = "kubectl get acnp"
 	_, stdout, stderr, err = data.RunCommandOnNode(controlPlaneNodeName(), cmd)
 	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", cmd, controlPlaneNodeName(), err, stdout, stderr)
@@ -176,29 +182,28 @@ func testPolicyRecommendationResult(t *testing.T, data *TestData, isIPv6 bool, t
 			rejectACNPCnt += 1
 		}
 	}
-	assert.Equal(expectedAllowACNPCnt, allowACNPCnt)
-	assert.Equal(expectedRejectACNPCnt, rejectACNPCnt)
+	assert.Equalf(expectedAllowACNPCnt, allowACNPCnt, fmt.Sprintf("Expected allow ACNP count is: %d. Actual count is: %d. Recommended policies:\n%s", expectedAllowACNPCnt, allowACNPCnt, allPolicies))
+	assert.Equalf(expectedRejectACNPCnt, rejectACNPCnt, fmt.Sprintf("Expected reject ACNP count is: %d. Actual count is: %d. Recommended policies:\n%s", expectedRejectACNPCnt, rejectACNPCnt, allPolicies))
 }
 
-func startJob(t *testing.T, data *TestData) (cmd, stdout, stderr string) {
-	cmd = "chmod +x ./theiactl"
+func runJob(t *testing.T, data *TestData) (cmd, stdout, stderr string) {
+	cmd = "chmod +x ./theia"
 	_, stdout, stderr, err := data.RunCommandOnNode(controlPlaneNodeName(), cmd)
 	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", cmd, controlPlaneNodeName(), err, stdout, stderr)
-	cmd = fmt.Sprintf("./theiactl policyreco start -k=%s", kubeconfigPath)
-	_, stdout, stderr, err = data.RunCommandOnNode(controlPlaneNodeName(), cmd)
+	_, stdout, stderr, err = data.RunCommandOnNode(controlPlaneNodeName(), startCmd)
+	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", startCmd, controlPlaneNodeName(), err, stdout, stderr)
+	return cmd, stdout, stderr
+}
+
+func getJobStatus(t *testing.T, data *TestData, jobId string) (cmd, stdout, stderr string) {
+	cmd = fmt.Sprintf("%s --id %s", statusCmd, jobId)
+	_, stdout, stderr, err := data.RunCommandOnNode(controlPlaneNodeName(), cmd)
 	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", cmd, controlPlaneNodeName(), err, stdout, stderr)
 	return cmd, stdout, stderr
 }
 
-func checkJob(t *testing.T, data *TestData, jobId string) (cmd, stdout, stderr string) {
-	cmd = fmt.Sprintf("./theiactl policyreco check --id=%s -k=%s", jobId, kubeconfigPath)
-	_, stdout, stderr, err := data.RunCommandOnNode(controlPlaneNodeName(), cmd)
-	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", cmd, controlPlaneNodeName(), err, stdout, stderr)
-	return cmd, stdout, stderr
-}
-
-func getJobResult(t *testing.T, data *TestData, jobId string) (cmd, stdout, stderr string) {
-	cmd = fmt.Sprintf("./theiactl policyreco result --id=%s -k=%s -f=%s", jobId, kubeconfigPath, outputYaml)
+func retrieveJobResult(t *testing.T, data *TestData, jobId string) (cmd, stdout, stderr string) {
+	cmd = fmt.Sprintf("%s --id %s -f %s", retrieveCmd, jobId, policyOutputYML)
 	_, stdout, stderr, err := data.RunCommandOnNode(controlPlaneNodeName(), cmd)
 	require.NoErrorf(t, err, "Error when running %v from %s: %v\nstdout:%s\nstderr:%s", cmd, controlPlaneNodeName(), err, stdout, stderr)
 	return cmd, stdout, stderr
@@ -207,7 +212,7 @@ func getJobResult(t *testing.T, data *TestData, jobId string) (cmd, stdout, stde
 // waitJobComplete waits for the policy recommendation Spark job completes
 func waitJobComplete(t *testing.T, data *TestData, jobId string, timeout time.Duration) error {
 	err := wait.PollImmediate(defaultInterval, timeout, func() (bool, error) {
-		_, stdout, _ := checkJob(t, data, jobId)
+		_, stdout, _ := getJobStatus(t, data, jobId)
 		if strings.Contains(stdout, "Status of this policy recommendation job is COMPLETED") {
 			return true, nil
 		}
@@ -215,7 +220,7 @@ func waitJobComplete(t *testing.T, data *TestData, jobId string, timeout time.Du
 		return false, nil
 	})
 	if err == wait.ErrWaitTimeout {
-		_, stdout, stderr := checkJob(t, data, jobId)
+		_, stdout, stderr := getJobStatus(t, data, jobId)
 		return fmt.Errorf("policy recommendation Spark job not completed after %v\nstdout:%s\nstderr:%s", timeout, stdout, stderr)
 	} else if err != nil {
 		return err
