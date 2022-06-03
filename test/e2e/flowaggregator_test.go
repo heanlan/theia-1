@@ -158,7 +158,11 @@ func TestFlowAggregator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
 	}
-	defer teardownTest(t, data)
+	defer func() {
+		teardownTest(t, data)
+		teardownFlowAggregator(t, data)
+		teardownFlowVisibility(t, data)
+	}()
 
 	podAIPs, podBIPs, podCIPs, podDIPs, podEIPs, err := createPerftestPods(data)
 	if err != nil {
