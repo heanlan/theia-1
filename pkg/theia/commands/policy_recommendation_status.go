@@ -44,7 +44,7 @@ Check the current status of job with ID e998433e-accb-4888-9fc8-06563f073e86
 $ theia policy-recommendation status --id e998433e-accb-4888-9fc8-06563f073e86
 Or
 $ theia policy-recommendation status e998433e-accb-4888-9fc8-06563f073e86
-Use Cluster IP when checking the current status of job with ID e998433e-accb-4888-9fc8-06563f073e86
+Use Service ClusterIP when checking the current status of job with ID e998433e-accb-4888-9fc8-06563f073e86
 $ theia policy-recommendation status e998433e-accb-4888-9fc8-06563f073e86 --use-cluster-ip
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -83,7 +83,7 @@ $ theia policy-recommendation status e998433e-accb-4888-9fc8-06563f073e86 --use-
 		}
 		if state == "RUNNING" {
 			var endpoint string
-			service := fmt.Sprintf("policy-reco-%s-ui-svc", recoID)
+			service := fmt.Sprintf("policy-recommendation-%s-ui-svc", recoID)
 			if useClusterIP {
 				serviceIP, servicePort, err := GetServiceAddr(clientset, service)
 				if err != nil {
@@ -124,7 +124,7 @@ func getPolicyRecommendationStatus(clientset kubernetes.Interface, recoID string
 		AbsPath("/apis/sparkoperator.k8s.io/v1beta2").
 		Namespace(flowVisibilityNS).
 		Resource("sparkapplications").
-		Name("policy-reco-" + recoID).
+		Name("policy-recommendation-" + recoID).
 		Do(context.TODO()).
 		Into(sparkApplication)
 	if err != nil {
@@ -135,7 +135,7 @@ func getPolicyRecommendationStatus(clientset kubernetes.Interface, recoID string
 }
 
 func getPolicyRecommendationProgress(baseUrl string) (string, error) {
-	// Get the id of current spark application
+	// Get the id of current Spark application
 	url := fmt.Sprintf("%s/api/v1/applications", baseUrl)
 	response, err := getResponseFromSparkMonitoringSvc(url)
 	if err != nil {
@@ -212,7 +212,7 @@ func init() {
 	policyRecommendationStatusCmd.Flags().Bool(
 		"use-cluster-ip",
 		false,
-		`Enable this option will use ClusterIP instead of port forwarding when connecting to the Spark Monitoring Service.
-(Only works when running in cluster)`,
+		`Enable this option will use Service ClusterIP instead of port forwarding when connecting to the Spark Monitoring Service.
+It can only be used when running theia in cluster.`,
 	)
 }

@@ -35,7 +35,7 @@ var policyRecommendationRetrieveCmd = &cobra.Command{
 	Use:   "result",
 	Short: "Get the recommendation result of a policy recommendation Spark job",
 	Long: `Get the recommendation result of a policy recommendation Spark job by ID.
-It will return the recommended network policies described in yaml.`,
+It will return the recommended NetworkPolicies described in yaml.`,
 	Args: cobra.RangeArgs(0, 1),
 	Example: `
 Get the recommendation result with job ID e998433e-accb-4888-9fc8-06563f073e86
@@ -44,7 +44,7 @@ Or
 $ theia policy-recommendation retrieve e998433e-accb-4888-9fc8-06563f073e86
 Use a customized ClickHouse endpoint when connecting to ClickHouse to getting the result
 $ theia policy-recommendation retrieve e998433e-accb-4888-9fc8-06563f073e86 --clickhouse-endpoint 10.10.1.1
-Use Cluster IP when connecting to ClickHouse to getting the result
+Use Service ClusterIP when connecting to ClickHouse to getting the result
 $ theia policy-recommendation retrieve e998433e-accb-4888-9fc8-06563f073e86 --use-cluster-ip
 Save the recommendation result to file
 $ theia policy-recommendation retrieve e998433e-accb-4888-9fc8-06563f073e86 --use-cluster-ip --file output.yaml
@@ -229,13 +229,13 @@ func init() {
 	policyRecommendationRetrieveCmd.Flags().Bool(
 		"use-cluster-ip",
 		false,
-		`Enable this option will use ClusterIP instead of port forwarding when connecting to the ClickHouse service.
-(Only works when running in cluster)`,
+		`Enable this option will use Service ClusterIP instead of port forwarding when connecting to the ClickHouse service.
+It can only be used when running theia in cluster.`,
 	)
 	policyRecommendationRetrieveCmd.Flags().StringP(
 		"file",
 		"f",
 		"",
-		"The file path where you want to save the results.",
+		"The file path where you want to save the result.",
 	)
 }

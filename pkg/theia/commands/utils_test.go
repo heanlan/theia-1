@@ -39,7 +39,7 @@ var fakeClientset = fake.NewSimpleClientset(
 			Name:      "spark-operator",
 			Namespace: flowVisibilityNS,
 			Labels: map[string]string{
-				"app.kubernetes.io/instance": "policy-reco",
+				"app.kubernetes.io/instance": "policy-recommendation",
 				"app.kubernetes.io/name":     "spark-operator",
 			},
 		},

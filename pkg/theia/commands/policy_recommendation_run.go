@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,7 +38,7 @@ const (
 	sparkImage              = "antrea/theia-policy-recommendation:latest"
 	sparkImagePullPolicy    = "IfNotPresent"
 	sparkAppFile            = "local:///opt/spark/work-dir/policy_recommendation_job.py"
-	sparkServiceAccount     = "policy-reco-spark"
+	sparkServiceAccount     = "policy-recommendation-spark"
 	sparkVersion            = "3.1.1"
 	statusCheckPollInterval = 5 * time.Second
 	statusCheckPollTimeout  = 60 * time.Minute
@@ -55,17 +56,15 @@ type SparkResourceArgs struct {
 var policyRecommendationRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run a new policy recommendation Spark job",
-	Long: `Run a new policy recommendation Spark job.
-Network policies will be recommended based on the flow records sent by Flow Aggregator.
-Must finish the deployment of Theia first, please follow the steps in 
-https://github.com/antrea-io/theia/blob/main/docs/network-policy-recommendation.md`,
-	Example: `Run a policy recommendation spark job with default configuration
+	Long: `Run a new policy recommendation Spark job. 
+Must finish the deployment of Theia first`,
+	Example: `Run a policy recommendation Spark job with default configuration
 $ theia policy-recommendation run
-Run an initial policy recommendation spark job with network isolation option anp-deny-applied and limit on last 10k flow records
-$ theia policy-recommendation run --type initial --option anp-deny-applied --limit 10000
-Run an initial policy recommendation spark job with network isolation option anp-deny-applied and limit on flow records from 2022-01-01 00:00:00 to 2022-01-31 23:59:59.
-$ theia policy-recommendation run --type initial --option anp-deny-applied --start-time '2022-01-01 00:00:00' --end-time '2022-01-31 23:59:59'
-Run a policy recommendation spark job with default configuration but doesn't recommend toServices ANPs
+Run an initial policy recommendation Spark job with policy type anp-deny-applied and limit on last 10k flow records
+$ theia policy-recommendation run --type initial --policy-type anp-deny-applied --limit 10000
+Run an initial policy recommendation Spark job with policy type anp-deny-applied and limit on flow records from 2022-01-01 00:00:00 to 2022-01-31 23:59:59.
+$ theia policy-recommendation run --type initial --policy-type anp-deny-applied --start-time '2022-01-01 00:00:00' --end-time '2022-01-31 23:59:59'
+Run a policy recommendation Spark job with default configuration but doesn't recommend toServices ANPs
 $ theia policy-recommendation run --to-services=false
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -90,22 +89,22 @@ $ theia policy-recommendation run --to-services=false
 		}
 		recoJobArgs = append(recoJobArgs, "--limit", strconv.Itoa(limit))
 
-		option, err := cmd.Flags().GetString("option")
+		policyType, err := cmd.Flags().GetString("policy-type")
 		if err != nil {
 			return err
 		}
-		var optionArg int
-		if option == "anp-deny-applied" {
-			optionArg = 1
-		} else if option == "anp-deny-all" {
-			optionArg = 2
-		} else if option == "k8s-np" {
-			optionArg = 3
+		var policyTypeArg int
+		if policyType == "anp-deny-applied" {
+			policyTypeArg = 1
+		} else if policyType == "anp-deny-all" {
+			policyTypeArg = 2
+		} else if policyType == "k8s-np" {
+			policyTypeArg = 3
 		} else {
-			return fmt.Errorf(`option of network isolation preference should be 
+			return fmt.Errorf(`type of generated NetworkPolicy should be
 anp-deny-applied or anp-deny-all or k8s-np`)
 		}
-		recoJobArgs = append(recoJobArgs, "--option", strconv.Itoa(optionArg))
+		recoJobArgs = append(recoJobArgs, "--option", strconv.Itoa(policyTypeArg))
 
 		startTime, err := cmd.Flags().GetString("start-time")
 		if err != nil {
@@ -152,11 +151,11 @@ be a list of namespace string, for example: '["kube-system","flow-aggregator","f
 			recoJobArgs = append(recoJobArgs, "--ns_allow_list", nsAllowList)
 		}
 
-		rmLabels, err := cmd.Flags().GetBool("rm-labels")
+		excludeLabels, err := cmd.Flags().GetBool("exclude-labels")
 		if err != nil {
 			return err
 		}
-		recoJobArgs = append(recoJobArgs, "--rm_labels", strconv.FormatBool(rmLabels))
+		recoJobArgs = append(recoJobArgs, "--rm_labels", strconv.FormatBool(excludeLabels))
 
 		toServices, err := cmd.Flags().GetBool("to-services")
 		if err != nil {
@@ -179,7 +178,7 @@ be a list of namespace string, for example: '["kube-system","flow-aggregator","f
 		}
 		matchResult, err := regexp.MatchString(k8sQuantitiesReg, driverCoreRequest)
 		if err != nil || !matchResult {
-			return fmt.Errorf("driver-core-request should conform to the Kubernetes convention")
+			return fmt.Errorf("driver-core-request should conform to the Kubernetes resource quantity convention")
 		}
 		sparkResourceArgs.driverCoreRequest = driverCoreRequest
 
@@ -189,7 +188,7 @@ be a list of namespace string, for example: '["kube-system","flow-aggregator","f
 		}
 		matchResult, err = regexp.MatchString(k8sQuantitiesReg, driverMemory)
 		if err != nil || !matchResult {
-			return fmt.Errorf("driver-memory should conform to the Kubernetes convention")
+			return fmt.Errorf("driver-memory should conform to the Kubernetes resource quantity convention")
 		}
 		sparkResourceArgs.driverMemory = driverMemory
 
@@ -199,7 +198,7 @@ be a list of namespace string, for example: '["kube-system","flow-aggregator","f
 		}
 		matchResult, err = regexp.MatchString(k8sQuantitiesReg, executorCoreRequest)
 		if err != nil || !matchResult {
-			return fmt.Errorf("executor-core-request should conform to the Kubernetes convention")
+			return fmt.Errorf("executor-core-request should conform to the Kubernetes resource quantity convention")
 		}
 		sparkResourceArgs.executorCoreRequest = executorCoreRequest
 
@@ -209,7 +208,7 @@ be a list of namespace string, for example: '["kube-system","flow-aggregator","f
 		}
 		matchResult, err = regexp.MatchString(k8sQuantitiesReg, executorMemory)
 		if err != nil || !matchResult {
-			return fmt.Errorf("executor-memory should conform to the Kubernetes convention")
+			return fmt.Errorf("executor-memory should conform to the Kubernetes resource quantity convention")
 		}
 		sparkResourceArgs.executorMemory = executorMemory
 
@@ -240,7 +239,7 @@ be a list of namespace string, for example: '["kube-system","flow-aggregator","f
 				Kind:       "SparkApplication",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "policy-reco-" + recommendationID,
+				Name:      "policy-recommendation-" + recommendationID,
 				Namespace: flowVisibilityNS,
 			},
 			Spec: sparkv1.SparkApplicationSpec{
@@ -321,6 +320,10 @@ be a list of namespace string, for example: '["kube-system","flow-aggregator","f
 				}
 			})
 			if err != nil {
+				if strings.Contains(err.Error(), "timed out") {
+					return fmt.Errorf(`Spark job with ID %s wait timeout of 60 minutes expired.
+Job is still running. Please check completion status for job via CLI later.`, recommendationID)
+				}
 				return err
 			}
 
@@ -376,14 +379,14 @@ func init() {
 		"The limit on the number of flow records read from the database. 0 means no limit.",
 	)
 	policyRecommendationRunCmd.Flags().StringP(
-		"option",
-		"o",
+		"policy-type",
+		"p",
 		"anp-deny-applied",
-		`Option of network isolation preference in policy recommendation.
-Currently we support 3 options:
-anp-deny-applied: Recommending allow ANP/ACNP policies, with default deny rules only on applied to Pod labels which have allow rules recommended.
+		`Types of generated NetworkPolicy.
+Currently we have 3 generated NetworkPolicy types:
+anp-deny-applied: Recommending allow ANP/ACNP policies, with default deny rules only on Pods which have an allow rule applied.
 anp-deny-all: Recommending allow ANP/ACNP policies, with default deny rules for whole cluster.
-k8s-np: Recommending allow K8s network policies, with no deny rules at all`,
+k8s-np: Recommending allow K8s NetworkPolicies.`,
 	)
 	policyRecommendationRunCmd.Flags().StringP(
 		"start-time",
@@ -403,71 +406,71 @@ Format is YYYY-MM-DD hh:mm:ss in UTC timezone. No limit of the end time of flow 
 		"ns-allow-list",
 		"n",
 		"",
-		`List of default traffic allow namespaces.
-If no namespaces provided, Traffic inside Antrea CNI related namespaces: ['kube-system', 'flow-aggregator',
+		`List of default allow Namespaces.
+If no Namespaces provided, Traffic inside Antrea CNI related Namespaces: ['kube-system', 'flow-aggregator',
 'flow-visibility'] will be allowed by default.`,
 	)
 	policyRecommendationRunCmd.Flags().Bool(
-		"rm-labels",
+		"exclude-labels",
 		true,
-		`Enable this option will remove automatically generated Pod labels including 'pod-template-hash',
-'controller-revision-hash', 'pod-template-generation'.`,
+		`Enable this option will exclude automatically generated Pod labels including 'pod-template-hash',
+'controller-revision-hash', 'pod-template-generation' during policy recommendation.`,
 	)
 	policyRecommendationRunCmd.Flags().Bool(
 		"to-services",
 		true,
 		`Use the toServices feature in ANP and recommendation toServices rules for Pod-to-Service flows,
-only works when option is 1 or 2.`,
+only works when option is anp-deny-applied or anp-deny-all.`,
 	)
 	policyRecommendationRunCmd.Flags().Int32(
 		"executor-instances",
 		1,
-		"Specify the number of executors for the spark application. Example values include 1, 2, 8, etc.",
+		"Specify the number of executors for the Spark application. Example values include 1, 2, 8, etc.",
 	)
 	policyRecommendationRunCmd.Flags().String(
 		"driver-core-request",
 		"200m",
-		`Specify the cpu request for the driver Pod. Values conform to the Kubernetes convention.
+		`Specify the CPU request for the driver Pod. Values conform to the Kubernetes resource quantity convention.
 Example values include 0.1, 500m, 1.5, 5, etc.`,
 	)
 	policyRecommendationRunCmd.Flags().String(
 		"driver-memory",
 		"512M",
-		`Specify the memory request for the driver Pod. Values conform to the Kubernetes convention.
+		`Specify the memory request for the driver Pod. Values conform to the Kubernetes resource quantity convention.
 Example values include 512M, 1G, 8G, etc.`,
 	)
 	policyRecommendationRunCmd.Flags().String(
 		"executor-core-request",
 		"200m",
-		`Specify the cpu request for the executor Pod. Values conform to the Kubernetes convention.
+		`Specify the CPU request for the executor Pod. Values conform to the Kubernetes resource quantity convention.
 Example values include 0.1, 500m, 1.5, 5, etc.`,
 	)
 	policyRecommendationRunCmd.Flags().String(
 		"executor-memory",
 		"512M",
-		`Specify the memory request for the executor Pod. Values conform to the Kubernetes convention.
+		`Specify the memory request for the executor Pod. Values conform to the Kubernetes resource quantity convention.
 Example values include 512M, 1G, 8G, etc.`,
 	)
 	policyRecommendationRunCmd.Flags().Bool(
 		"wait",
 		false,
-		"Enable this option will hold and wait the whole policy recommendation job finished.",
+		"Enable this option will hold and wait the whole policy recommendation job finishes.",
 	)
 	policyRecommendationRunCmd.Flags().String(
 		"clickhouse-endpoint",
 		"",
-		"The ClickHouse Service endpoint. (Only works when wait is enabled)",
+		"The ClickHouse Service endpoint. It can only be used when wait is enabled.",
 	)
 	policyRecommendationRunCmd.Flags().Bool(
 		"use-cluster-ip",
 		false,
 		`Enable this option will use ClusterIP instead of port forwarding when connecting to the ClickHouse Service.
-It can only be used when running in cluster. (Only works when wait is enabled)`,
+It can only be used when running in cluster and when wait is enabled.`,
 	)
 	policyRecommendationRunCmd.Flags().StringP(
 		"file",
 		"f",
 		"",
-		"The file path where you want to save the results. (Only works when wait is enabled)",
+		"The file path where you want to save the result. It can only be used when wait is enabled.",
 	)
 }

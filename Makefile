@@ -167,16 +167,17 @@ policy-recommendation:
 	docker tag antrea/theia-policy-recommendation:$(DOCKER_IMG_VERSION) projects.registry.vmware.com/antrea/theia-policy-recommendation
 	docker tag antrea/theia-policy-recommendation:$(DOCKER_IMG_VERSION) projects.registry.vmware.com/antrea/theia-policy-recommendation:$(DOCKER_IMG_VERSION)
 
-.PHONY: theia
-theia:
-	@mkdir -p $(BINDIR)
-	GOOS=linux $(GO) build -o $(BINDIR) $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/pkg/theia
+THEIA_BINARIES := theia-darwin theia-linux theia-windows
+$(THEIA_BINARIES): theia-%:
+	@GOOS=$* $(GO) build -o $(BINDIR)/$@ $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/pkg/theia
+	@if [[ $@ != *windows ]]; then \
+	  chmod 0755 $(BINDIR)/$@; \
+	else \
+	  mv $(BINDIR)/$@ $(BINDIR)/$@.exe; \
+	fi
 
-# Add the darwin version binary to help dev&test on Mac for now
-.PHONY: theia-darwin
-theia-darwin:
-	@mkdir -p $(BINDIR)
-	GOOS=darwin $(GO) build -o $(BINDIR) $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/pkg/theia
+.PHONY: theia
+theia: $(THEIA_BINARIES)
 
 .PHONY: theia-release
 theia-release:

@@ -56,13 +56,13 @@ func PolicyRecoPreCheck(clientset kubernetes.Interface) error {
 func CheckSparkOperatorPod(clientset kubernetes.Interface) error {
 	// Check the deployment of Spark Operator in flow-visibility ns
 	pods, err := clientset.CoreV1().Pods(flowVisibilityNS).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/instance=policy-reco,app.kubernetes.io/name=spark-operator",
+		LabelSelector: "app.kubernetes.io/instance=policy-recommendation,app.kubernetes.io/name=spark-operator",
 	})
 	if err != nil {
-		return fmt.Errorf("error %v when finding the policy-reco-spark-operator Pod, please check the deployment of the Spark Operator", err)
+		return fmt.Errorf("error %v when finding the policy-recommendation-spark-operator Pod, please check the deployment of the Spark Operator", err)
 	}
 	if len(pods.Items) < 1 {
-		return fmt.Errorf("can't find the policy-reco-spark-operator Pod, please check the deployment of the Spark Operator")
+		return fmt.Errorf("can't find the policy-recommendation-spark-operator Pod, please check the deployment of the Spark Operator")
 	}
 	hasRunningPod := false
 	for _, pod := range pods.Items {
