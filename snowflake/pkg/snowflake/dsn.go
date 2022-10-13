@@ -22,6 +22,8 @@ import (
 	sf "github.com/snowflakedb/gosnowflake"
 )
 
+var logFatalf = log.Fatalf
+
 func SetWarehouse(name string) func(*sf.Config) {
 	return func(cfg *sf.Config) {
 		cfg.Warehouse = name
@@ -47,7 +49,7 @@ func GetDSN(options ...func(*sf.Config)) (string, *sf.Config, error) {
 			return value
 		}
 		if failOnMissing {
-			log.Fatalf("%v environment variable is not set.", k)
+			logFatalf("%v environment variable is not set.", k)
 		}
 		return ""
 	}

@@ -27,6 +27,8 @@ import (
 	sqsclient "antrea.io/theia/snowflake/pkg/aws/client/sqs"
 )
 
+var println = fmt.Println
+
 // receiveSqsMessageCmd represents the receive-sqs-message command
 var receiveSqsMessageCmd = &cobra.Command{
 	Use:   "receive-sqs-message",
@@ -97,7 +99,7 @@ func receiveSQSMessage(ctx context.Context, sqsClient sqsclient.Interface, queue
 		return nil
 	}
 	message := output.Messages[0]
-	fmt.Println(*message.Body)
+	println(*message.Body)
 	if !delete {
 		return nil
 	}
